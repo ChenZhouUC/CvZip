@@ -36,7 +36,9 @@ class VideoGenerator:
         elif method == "crop":
             left_top = (np.clip(crop_locator[0], 0, self._input_width), np.clip(crop_locator[1], 0, self._input_height))
             right_down = (np.clip(crop_locator[0] + shape_width, 0, self._input_width), np.clip(crop_locator[1] + shape_height, 0, self._input_height))
-            return frame[left_top[1]:right_down[1], left_top[0]:right_down[0]]
+            # this_width = right_down[0] - left_top[0]
+            # this_height = right_down[1] - left_top[1]
+            return cv2.resize(frame[left_top[1]:right_down[1], left_top[0]:right_down[0]], (shape_width, shape_height))
         else:
             raise NotImplementedError
 
