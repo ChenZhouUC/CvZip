@@ -3,7 +3,7 @@ import numpy as np
 
 
 def polygon_marker(img, polygon, color, thickness, fill, point, radius, closed, epsilon=0.1):
-    polygon = np.array(polygon)
+    polygon = np.array(polygon).round().astype(int)
     fill = np.clip(fill, 0.0, 1.0)
     if len(polygon.shape) == 2:
         assert polygon.shape[1] == 2, "coordinates must be of dim 2."
@@ -40,9 +40,9 @@ def rectangle_marker(img, rectangle, color, thickness, fill, point, radius, epsi
 
 def text_marker(img, text, coordinate, locator, font, fontscale, thickness, color, background=None, bgthick=0.5):
     (label_width, label_height), baseline = cv2.getTextSize(text, font, fontscale, thickness)
-    locator_x, locator_y = np.clip(locator, 0, 1)[:2] * np.array([label_width, label_height + baseline]).round()
+    locator_x, locator_y = np.array(locator)[:2] * np.array([label_width, label_height + baseline]).round()
     shift = np.array([- locator_x, label_height - locator_y])
-    coordinate = tuple(np.array(coordinate) + shift)
+    coordinate = tuple((np.array(coordinate) + shift).round().astype(int))
     if background is not None:
         left_top_corner = [coordinate[0], coordinate[1] - label_height]
         right_down_corner = [coordinate[0] + label_width, coordinate[1] + baseline]
@@ -58,6 +58,6 @@ if __name__ == "__main__":
     colorful = rectangle_marker(colorful, c, (0, 255, 0), 2, fill=0.5, point=False, radius=5)
     coord = (150, 150)
     # cv2.circle(colorful, coord, 5, (0, 255, 255), -1)
-    text_marker(colorful, "classified", coord, (0, 1), cv2.FONT_HERSHEY_TRIPLEX, 1, 2, 0, background=(255, 255, 255), bgthick=0.8)
+    text_marker(colorful, "draw", coord, (0.5, 0.5), cv2.FONT_HERSHEY_TRIPLEX, 1, 1, 0, background=(255, 255, 255), bgthick=0.8)
     cv2.imshow("winname", colorful)
     cv2.waitKey(0)
