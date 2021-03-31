@@ -21,7 +21,6 @@ def edge_cropper(img, width, height):
 
 if __name__ == "__main__":
     img_path = "/home/chenzhou/Pictures/b.jpg"
-    out_path = "/home/chenzhou/Downloads/cad_crop.png"
 
     img = cv2.imread(img_path)
     print(img.shape)
