@@ -3,7 +3,7 @@ import numpy as np
 import sys
 import os
 module_ = os.path.abspath(__file__)
-for layer_ in range(2):
+for layer_ in range(3):
     module_ = os.path.dirname(module_)
 sys.path.append(module_)
 from image.geometrics_marker import text_marker

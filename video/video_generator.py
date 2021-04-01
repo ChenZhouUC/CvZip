@@ -74,6 +74,16 @@ class VideoGenerator:
                 break
         self._writer.release()
 
+    def read_frame(self):
+        if self._reader.isOpened():
+            ret, frame = self._reader.read()
+            if ret:
+                return True, frame
+            else:
+                return False, None
+        else:
+            return False, None
+
     def designate_format(self, output_format):
         self.output_format = output_format.lower()
         if self.output_format == 'avi':

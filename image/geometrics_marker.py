@@ -3,6 +3,8 @@ import numpy as np
 
 
 def polygon_marker(img, polygon, color, thickness, fill, point, radius, closed, epsilon=0.1):
+    if len(polygon) == 0:
+        return img
     polygon = np.array(polygon).round().astype(int)
     fill = np.clip(fill, 0.0, 1.0)
     if len(polygon.shape) == 2:

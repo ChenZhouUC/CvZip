@@ -1,13 +1,13 @@
 import cv2
 import numpy as np
+from copy import deepcopy
 import sys
 import os
-from copy import deepcopy
 module_ = os.path.abspath(__file__)
-for layer_ in range(2):
+for layer_ in range(3):
     module_ = os.path.dirname(module_)
 sys.path.append(module_)
-from image.geometrics_marker import text_marker, rectangle_marker, polygon_marker
+from image.geometrics_marker import text_marker, polygon_marker
 from elementary_labeler import ElementaryLabeler
 
 
@@ -197,37 +197,44 @@ class DetectionLabeler(ElementaryLabeler):
                     center = np.mean(self.region_cache[self.match], axis=0)
                     cand += (cand - center) * 0.1
                     self.region_cache[self.match].append(tuple(cand.astype(int)))
-                    print(self.region_cache[self.match])
+            return False, None
         elif status.lower() == "add":
             if self.match is None:
                 if len(self.point_cache) >= 3:
                     self.region_cache.append(deepcopy(self.point_cache))
                     self.point_cache = []
+            return False, None
         elif status.lower() == "save":
-            if self.match is None:
-                if len(self.point_cache) >= 3:
-                    self.region_cache.append(deepcopy(self.point_cache))
-                    self.point_cache = []
-            # todo
-            self.clear()
+            if self.match is None and len(self.point_cache) == 0:
+                rst = {}
+                for _i, _rg in enumerate(self.region_cache):
+                    rst[_i] = np.array(_rg).tolist()
+                self.clear()
+                return True, rst
+            return False, None
 
-    def renderImage(self, img, status_dict, wait=5, pt_color=(0, 255, 0), plg_color=(255, 0, 0)):
+    def render_image(self, img, status_dict, wait=5, pt_color=(0, 255, 0), plg_color=(255, 0, 0), text_color=(0, 255, 255)):
         if img.shape[2] == 3:
             cv2.setMouseCallback(self.window_name, self.__mouse_handler, cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
-        else:
+        elif img.shape[2] == 1:
             cv2.setMouseCallback(self.window_name, self.__mouse_handler, img)
+        else:
+            raise NotImplementedError
+        # render part
         for _j, _rg in enumerate(self.region_cache):
             img = polygon_marker(img, _rg, plg_color, np.ceil(self.adsorb_thresh).astype(int), 0.5, True, 1 + np.ceil(self.adsorb_thresh).astype(int), True)
-        try:
-            img = polygon_marker(img, self.point_cache, pt_color, np.ceil(self.adsorb_thresh).astype(int), 0.5, True, 1 + np.ceil(self.adsorb_thresh).astype(int), False)
-        except:
-            pass
-        text_marker(img, str(len(self.point_cache)), (0, 0), (0, 0), cv2.FONT_HERSHEY_TRIPLEX, 2, 3, (0, 255, 255))
+        img = polygon_marker(img, self.point_cache, pt_color, np.ceil(self.adsorb_thresh).astype(int), 0.5, True, 1 + np.ceil(self.adsorb_thresh).astype(int), False)
+        text = "PT:{} RG:{}".format(len(self.point_cache), len(self.region_cache))
+        text_marker(img, text, (0, 0), (0, 0), cv2.FONT_HERSHEY_TRIPLEX, 1, 2, text_color, background=(255, 255, 255), bgthick=0.5)
         cv2.imshow(self.window_name, img)
         pressed_key = cv2.waitKey(wait) & 0xFF
         for k, v in status_dict.items():
             if pressed_key == ord(k):
-                self.__status_handler(v)
+                flag, rst = self.__status_handler(v)
+                if flag:
+                    print("recorded: {}".format(rst))
+                    return flag, rst
+        return False, None
 
     def clear(self):
         self.point_cache = []
@@ -241,10 +248,10 @@ class DetectionLabeler(ElementaryLabeler):
 if __name__ == '__main__':
     window_name = "Elementary Labeler"
     window_size = (1600, 1200)
-    labeler = DetectionLabeler(window_name, window_size, False)
+    labeler = DetectionLabeler(window_name, window_size, False, region_type="rect")
 
     img_path = "/home/chenzhou/Pictures/Concept/python-package.webp"
     colorful = cv2.imread(img_path)
     status_dict = {"a": "APPEND", "s": "SAVE", "d": "ADD"}
     while True:
-        labeler.renderImage(colorful.copy(), status_dict)
+        labeler.render_image(colorful.copy(), status_dict)
