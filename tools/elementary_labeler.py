@@ -121,7 +121,7 @@ class ElementaryLabeler(object):
 if __name__ == '__main__':
     window_name = "Elementary Labeler"
     window_size = (800, 600)
-    labeler = ElementaryLabeler(window_name, window_size, True)
+    labeler = ElementaryLabeler(window_name, window_size, False)
 
     img_path = "/home/chenzhou/Pictures/Concept/python-package.webp"
     colorful = cv2.imread(img_path)

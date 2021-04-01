@@ -22,12 +22,17 @@ def polygon_marker(img, polygon, color, thickness, fill, point, radius, closed, 
         marked = cv2.drawContours(img, [polygon], 0, color, thickness)
     else:
         marked = cv2.polylines(img, [polygon], closed, color, thickness)
-    if point:
-        # aspect_length = cv2.arcLength(polygon, closed=closed) / 4
-        aspect_length = np.sqrt(cv2.contourArea(polygon))
-        polygon_simplified = cv2.approxPolyDP(polygon, aspect_length * epsilon, closed=closed)
-        for p in polygon_simplified:
-            img = cv2.circle(img, tuple(p[0]), radius, color, -1)
+    if point > 0:
+        if point < 1:
+            # aspect_length = cv2.arcLength(polygon, closed=closed) / 4
+            aspect_length = np.sqrt(cv2.contourArea(polygon))
+            polygon_simplified = cv2.approxPolyDP(polygon, aspect_length * epsilon, closed=closed)
+            for p in polygon_simplified:
+                img = cv2.circle(img, tuple(p[0]), radius, color, -1)
+        else:
+            for p in polygon:
+                p = p.reshape(2)
+                img = cv2.circle(img, tuple(p), radius, color, -1)
     return marked
 
 
@@ -55,7 +60,7 @@ if __name__ == "__main__":
     img_path = "/home/chenzhou/Pictures/Concept/python-package.webp"
     colorful = cv2.imread(img_path)
     c = [(150, 150), (800, 800)]
-    colorful = rectangle_marker(colorful, c, (0, 255, 0), 2, fill=0.5, point=False, radius=5)
+    colorful = rectangle_marker(colorful, c, (0, 255, 0), 2, fill=0.5, point=0.5, radius=5)
     coord = (150, 150)
     # cv2.circle(colorful, coord, 5, (0, 255, 255), -1)
     text_marker(colorful, "draw", coord, (0.5, 0.5), cv2.FONT_HERSHEY_TRIPLEX, 1, 1, 0, background=(255, 255, 255), bgthick=0.8)
