@@ -86,7 +86,7 @@ class DetectionLabeler(ElementaryLabeler):
                                 self.point_cache.pop(self.match)
                                 self.match = None
                             else:
-                                self.point_cache = [self.point_cache[(self.match + 2) % 4]]
+                                # self.point_cache = [self.point_cache[(self.match + 2) % 4]]
                                 self.match = None
                         else:
                             self.match = None
@@ -182,7 +182,7 @@ class DetectionLabeler(ElementaryLabeler):
                             if self.dist_func(_pt, self.point_current) <= self.adsorb_thresh:
                                 self.point_cache = [self.point_cache[(_i + 2) % 4]]
                                 return
-                        if cv2.pointPolygonTest(np.array(self.point_cache), self.point_current, True) >= 0:
+                        if len(self.point_cache) == 4 and cv2.pointPolygonTest(np.array(self.point_cache), self.point_current, True) >= 0:
                             self.point_cache = []
                     for _i, _rg in enumerate(self.region_cache):
                         if cv2.pointPolygonTest(np.array(_rg), self.point_current, True) >= 0:
@@ -211,7 +211,7 @@ class DetectionLabeler(ElementaryLabeler):
             # todo
             self.clear()
 
-    def renderImage(self, img, status_dict, wait=10, pt_color=(0, 255, 0), plg_color=(255, 0, 0)):
+    def renderImage(self, img, status_dict, wait=5, pt_color=(0, 255, 0), plg_color=(255, 0, 0)):
         if img.shape[2] == 3:
             cv2.setMouseCallback(self.window_name, self.__mouse_handler, cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
         else:
