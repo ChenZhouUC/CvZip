@@ -7,21 +7,59 @@ module_ = os.path.abspath(__file__)
 for layer_ in range(3):
     module_ = os.path.dirname(module_)
 sys.path.append(module_)
-from image.geometrics_marker import text_marker, polygon_marker
+from image.geometrics_marker import text_marker, polygon_marker, rectangle_marker
 from elementary_labeler import ElementaryLabeler
+
+FONT, FONTSCALE, THICKNESS = cv2.FONT_HERSHEY_COMPLEX, 1.5, 2
 
 
 class ClassifiedDetectionLabeler(ElementaryLabeler):
-    def __init__(self, window_name, window_size, adsorb_opt=False, adsorb_ratio=0.005, dist_norm=2, region_type="rect", class_dict={0: "default"}):
+    def __init__(self, window_name, window_size, adsorb_opt=False, adsorb_ratio=0.005, dist_norm=2, region_type="rect", class_dict={0: "default"}, render_dict={0: (255, 0, 0)}):
         super(ClassifiedDetectionLabeler, self).__init__(window_name, window_size, adsorb_opt, adsorb_ratio, dist_norm)
         assert region_type.lower() in ["rect", "poly"]
         assert type(class_dict) == dict and len(class_dict.keys()) > 0
+        assert type(render_dict) == dict and len(render_dict.keys()) == len(class_dict.keys())
         self.class_dict = class_dict
+        self.render_dict = render_dict
         self.class_list = list(self.class_dict.keys())
         self.class_selected = self.class_list[0]
         self.region_shift = None
         self.region_cache = {k: [] for k in self.class_dict.keys()}
         self.region_type = region_type
+
+        self.__legend_panel()
+
+    def __legend_panel(self, cubic_shink=1, background=(255, 255, 255), text_color=(0, 0, 0), spacing=10):
+        width = 0
+        height = 0
+        for k in self.class_list:
+            (label_width, label_height), baseline = cv2.getTextSize(" " + str(k) + " " + self.class_dict[k], FONT, FONTSCALE, THICKNESS)
+            width = max(width, label_width)
+            height = max(height, label_height + baseline)
+        cubic_size = height - 2 * cubic_shink
+        cubic_shink = cubic_shink if cubic_size > 0 else 0
+        cubic_size = cubic_size if cubic_size > 0 else height
+        width = 2 * spacing + width + cubic_size
+        total_height = height * len(self.class_list) + spacing * (len(self.class_list) + 1)
+        channels = len(background)
+        panel = (np.ones([total_height, width, channels]) * np.array(background)).astype(np.uint8)
+        for _i, k in enumerate(self.class_list):
+            row_start = _i * height + (_i + 1) * spacing
+            panel = rectangle_marker(panel, [[cubic_shink + spacing, row_start], [cubic_shink + spacing + cubic_size, row_start + cubic_size]], self.render_dict[k], 1, 0.8, True, 1)
+            panel = text_marker(panel, " " + str(k) + " " + self.class_dict[k], (spacing + height, row_start), (0, 0), FONT, FONTSCALE, THICKNESS, text_color)
+        self.legend = panel
+
+    def __patch_legend(self, img, background=(255, 255, 255)):
+        height = img.shape[0]
+        legend_height = self.legend.shape[0]
+        if height < legend_height:
+            patch_bottom = (np.ones([legend_height - height, img.shape[1], img.shape[2]]) * np.array(background)).astype(np.uint8)
+            img = np.concatenate((img, patch_bottom), axis=0)
+        else:
+            patch_bottom = (np.ones([height - legend_height, self.legend.shape[1], self.legend.shape[2]]) * np.array(background)).astype(np.uint8)
+            legend = np.concatenate((self.legend, patch_bottom), axis=0)
+        img = np.concatenate((img, legend), axis=1)
+        return img
 
     def __mouse_handler(self, event, x, y, flags, image):
         image_size = image.shape[:2][::-1]
@@ -215,7 +253,7 @@ class ClassifiedDetectionLabeler(ElementaryLabeler):
                 return True, rst
             return False, None
 
-    def render_image(self, img, status_dict, wait=5, pt_color=(0, 255, 0), text_color=(0, 255, 255), render_dict={0: (255, 0, 0)}, render_layers={"selected": [0.5, 2], "background": [0.2, 1]}):
+    def render_image(self, img, status_dict, wait=5, pt_color=(0, 255, 0), render_layers={"selected": [0.5, 2], "background": [0.2, 1]}):
         if img.shape[2] == 3:
             cv2.setMouseCallback(self.window_name, self.__mouse_handler, cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
         elif img.shape[2] == 1:
@@ -234,9 +272,10 @@ class ClassifiedDetectionLabeler(ElementaryLabeler):
                 thicky = render_layers["background"][1]
                 radius = render_layers["background"][1]
             for _j, _rg in enumerate(_rgs):
-                img = polygon_marker(img, _rg, render_dict[_c], thicky, transparency, True, radius, True)
-        text = "cls:{} pt:{} rg:{}".format(self.class_dict[self.class_selected], len(self.point_cache), len(self.region_cache[self.class_selected]))
-        text_marker(img, text, (0, 0), (0, 0), cv2.FONT_HERSHEY_COMPLEX, 1.0, 2, text_color, background=(255, 255, 255), bgthick=0.3)
+                img = polygon_marker(img, _rg, self.render_dict[_c], thicky, transparency, True, radius, True)
+        text = "{} pt:{} rg:{}".format(self.class_dict[self.class_selected], len(self.point_cache), len(self.region_cache[self.class_selected]))
+        text_marker(img, text, (0, 0), (0, 0), FONT, FONTSCALE, THICKNESS, self.render_dict[self.class_selected], background=(255, 255, 255), bgthick=0.3)
+        img = self.__patch_legend(img)
         cv2.imshow(self.window_name, img)
         pressed_key = cv2.waitKey(wait) & 0xFF
         if self.match is None:
@@ -264,13 +303,13 @@ class ClassifiedDetectionLabeler(ElementaryLabeler):
 
 if __name__ == '__main__':
     window_name = "Elementary Labeler"
-    window_size = (800, 600)
+    window_size = (1000, 800)
     class_dict = {0: "people", 1: "dog", 2: "cat"}
     render_dict = {0: (139, 236, 255), 1: (58, 58, 139), 2: (226, 43, 138)}
-    labeler = ClassifiedDetectionLabeler(window_name, window_size, False, region_type="rect", class_dict=class_dict)
+    labeler = ClassifiedDetectionLabeler(window_name, window_size, False, region_type="rect", class_dict=class_dict, render_dict=render_dict)
 
     img_path = "/home/chenzhou/Pictures/Concept/python-package.webp"
     colorful = cv2.imread(img_path)
     status_dict = {"a": "APPEND", "s": "SAVE", "d": "ADD"}
     while True:
-        labeler.render_image(colorful.copy(), status_dict, render_dict=render_dict)
+        labeler.render_image(colorful.copy(), status_dict)

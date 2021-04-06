@@ -51,6 +51,7 @@ class ElementaryLabeler(object):
         self.window_size = window_size
         cv2.namedWindow(self.window_name, cv2.WINDOW_KEEPRATIO | cv2.WINDOW_GUI_NORMAL)
         cv2.resizeWindow(self.window_name, self.window_size[0], self.window_size[1])
+        cv2.moveWindow(self.window_name, 100, 100)
 
         self.point_cache = []
         self.point_current = (-1, -1)
