@@ -10,6 +10,8 @@ def decode_fourcc(cc):
 class VideoGenerator:
     def __init__(self, video_input, visual=False):
         self._input = video_input
+        self._input_name = os.path.basename(self._input)
+        self._input_identity, self._input_ext = os.path.splitext(self._input_name)
         self._reader = cv2.VideoCapture(self._input)
         self._input_width = int(self._reader.get(cv2.CAP_PROP_FRAME_WIDTH))
         self._input_height = int(self._reader.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -17,10 +19,12 @@ class VideoGenerator:
         self._input_fps = int(self._reader.get(cv2.CAP_PROP_FPS))
         self._input_fourcc = decode_fourcc(self._reader.get(cv2.CAP_PROP_FOURCC))
         self.fourcc = None
+        self._reader_counter = 0
         print("[VideoSize]:{}x{}x{} [FPS]:{} [FOURCC]:{}".format(self._input_frames, self._input_width, self._input_height, self._input_fps, self._input_fourcc))
         if visual:
             while self._reader.isOpened():
                 ret, frame = self._reader.read()
+                self._reader_counter += 1
                 if ret:
                     cv2.imshow("VISUAL", frame)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -28,6 +32,10 @@ class VideoGenerator:
 
     def __del__(self):
         self._reader.release()
+
+    def __reinit_reader(self):
+        self._reader = cv2.VideoCapture(self._input)
+        self._reader_counter = 0
 
     def __reshape_frame(self, frame, shape_width, shape_height, method="resize", crop_locator=None):
         # this function is necessary since different size designated between VideoWriter and input frames would causing skipping while burning
@@ -77,12 +85,50 @@ class VideoGenerator:
     def read_frame(self):
         if self._reader.isOpened():
             ret, frame = self._reader.read()
+            self._reader_counter += 1
             if ret:
                 return True, frame
             else:
                 return False, None
         else:
             return False, None
+
+    def input_frames(self):
+        return self._input_frames
+
+    def input_identity(self):
+        return self._input_identity
+
+    def split_frames(self, target_dir, ext=".png", start=None, num=None):
+        if start is None:
+            start = 0
+        else:
+            start = np.clip(start, 0, self._input_frames - 1).astype(int)
+        if num is None:
+            end = self._input_frames
+        else:
+            end = np.clip(start + num, start, self._input_frames).astype(int)
+        frame_dir = os.path.join(target_dir, self._input_identity, "images")
+        if os.path.exists(frame_dir):
+            print("warning: this identity already used, please check if it is labeled!")
+        else:
+            os.makedirs(frame_dir, exist_ok=True)
+        carving_stats = 0
+        while True:
+            ret, frame = self.read_frame()
+            this_frame_index = self._reader_counter - 1
+            if ret:
+                if start <= this_frame_index < end:
+                    img_path = os.path.join(frame_dir, str(this_frame_index) + ext)
+                    cv2.imwrite(img_path, frame)
+                    carving_stats += 1
+                    print("carving {}: {}".format(carving_stats, img_path))
+                elif this_frame_index >= end:
+                    break
+            else:
+                print("error: reading video error, stopped at frame {}!".format(this_frame_index))
+                break
+        print("finish splitting: {} frames".format(carving_stats))
 
     def designate_format(self, output_format):
         self.output_format = output_format.lower()
