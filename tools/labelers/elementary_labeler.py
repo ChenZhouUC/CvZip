@@ -63,6 +63,9 @@ class ElementaryLabeler(object):
         self.dist_func = __MinkowskiDistance
         self.adsorber = __CannyAdsorber
 
+    def __del__(self):
+        cv2.destroyAllWindows()
+
     def handlePoint(self, event, x, y, flags, image):
         image_size = image.shape[:2][::-1]
         self.adsorb_thresh = np.mean(image_size) * self.adsorb_ratio

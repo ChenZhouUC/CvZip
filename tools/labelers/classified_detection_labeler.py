@@ -252,6 +252,8 @@ class ClassifiedDetectionLabeler(ElementaryLabeler):
                 self.clear()
                 return True, rst
             return False, None
+        elif status.lower() == "quit":
+            exit()
 
     def render_image(self, img, status_dict, task_name, wait=5, pt_color=(0, 255, 0), render_layers={"selected": [0.5, 2], "background": [0.3, 1]}):
         if img.shape[2] == 3:
@@ -310,6 +312,6 @@ if __name__ == '__main__':
 
     img_path = "/home/chenzhou/Pictures/Concept/python-package.webp"
     colorful = cv2.imread(img_path)
-    status_dict = {"a": "APPEND", "s": "SAVE", "d": "ADD"}
+    status_dict = {"a": "APPEND", "s": "SAVE", "d": "ADD", "q": "QUIT"}
     while True:
         labeler.render_image(colorful.copy(), status_dict, "test")

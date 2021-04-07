@@ -25,6 +25,7 @@ class VideoLabeler(object):
         self.cache_trackbar_name = cache_trackbar_name
         self.cache_dict = cache_dict
         self.lock = lock
+        self.empty = (np.ones_like(self.labeler.legend) * 255).astype(np.uint8)
 
     def assign_task(self, source_path, target_path):
         image_list_tmp = os.listdir(source_path)
@@ -41,6 +42,7 @@ class VideoLabeler(object):
 
         self.total_frames = len(self.image_list)
         self.total_cache = min(self.cache_length, self.total_frames)
+        self.progress_points = self.total_frames - (self.total_cache - 1)
 
         def __TrackbarLoading(frame_index):
             def __LoadCache(image_path, image_list, frame_index, cache_length, cache_dict, lock):
@@ -64,29 +66,29 @@ class VideoLabeler(object):
         def __TrackbarDeactivate(num):
             pass
 
-        progress_points = self.total_frames - (self.total_cache - 1)
         cv2.createTrackbar(self.cache_trackbar_name, self.labeler.window_name, 0, self.total_cache - 1, __TrackbarDeactivate)
-        cv2.createTrackbar(self.progress_trackbar_name, self.labeler.window_name, 0, progress_points - 1, __TrackbarLoading)
+        cv2.createTrackbar(self.progress_trackbar_name, self.labeler.window_name, 0, self.progress_points - 1, __TrackbarLoading)
         cv2.setTrackbarPos(self.progress_trackbar_name, self.labeler.window_name, 1)
         cv2.setTrackbarPos(self.progress_trackbar_name, self.labeler.window_name, 0)
 
     def start_label(self, status_dict):
+        self.labeler.render_image(self.empty.copy(), status_dict, "LOADING...")
         while True:
-            frame_index = cv2.getTrackbarPos(self.progress_trackbar_name, self.labeler.window_name)
-            frame_index += cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
+            progress_pt = cv2.getTrackbarPos(self.progress_trackbar_name, self.labeler.window_name)
+            cache_pt = cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
+            frame_index = progress_pt + cache_pt
             if frame_index in self.cache_dict.keys():
                 image = self.cache_dict[frame_index]["image"]
                 flag, rst = self.labeler.render_image(image.copy(), status_dict, self.task_name)
                 if flag:
                     print("check the rst", rst)
-                    cv2.setTrackbarPos(self.trackbar_name, self.labeler.window_name, frame_index + 1)
+                    if cache_pt < self.total_cache - 1:
+                        cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, cache_pt + 1)
+                    elif progress_pt < self.progress_points - 1:
+                        cv2.setTrackbarPos(self.progress_trackbar_name, self.labeler.window_name, progress_pt + 1)
             else:
-                try:
-                    self.labeler.render_image(image.copy(), status_dict, "LOADING...")
-                except Exception as e:
-                    print("loading: {}".format(e))
-                finally:
-                    time.sleep(1)
+                self.labeler.render_image(self.empty.copy(), status_dict, "LOADING......")
+                time.sleep(1)
 
 
 if __name__ == '__main__':
@@ -94,7 +96,7 @@ if __name__ == '__main__':
     window_size = (1600, 1200)
     class_dict = {0: "people", 1: "dog", 2: "cat"}
     render_dict = {0: (139, 236, 255), 1: (58, 58, 139), 2: (226, 43, 138)}
-    status_dict = {"a": "APPEND", "s": "SAVE", "d": "ADD"}
+    status_dict = {"a": "APPEND", "s": "SAVE", "d": "ADD", "q": "QUIT"}
 
     MGR = Manager()
     CACHE_DICT = MGR.dict()
