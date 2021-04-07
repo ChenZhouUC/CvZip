@@ -253,7 +253,7 @@ class ClassifiedDetectionLabeler(ElementaryLabeler):
                 return True, rst
             return False, None
 
-    def render_image(self, img, status_dict, wait=5, pt_color=(0, 255, 0), render_layers={"selected": [0.5, 2], "background": [0.2, 1]}):
+    def render_image(self, img, status_dict, task_name, wait=5, pt_color=(0, 255, 0), render_layers={"selected": [0.5, 2], "background": [0.3, 1]}):
         if img.shape[2] == 3:
             cv2.setMouseCallback(self.window_name, self.__mouse_handler, cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
         elif img.shape[2] == 1:
@@ -273,7 +273,7 @@ class ClassifiedDetectionLabeler(ElementaryLabeler):
                 radius = render_layers["background"][1]
             for _j, _rg in enumerate(_rgs):
                 img = polygon_marker(img, _rg, self.render_dict[_c], thicky, transparency, True, radius, True)
-        text = "{} pt:{} rg:{}".format(self.class_dict[self.class_selected], len(self.point_cache), len(self.region_cache[self.class_selected]))
+        text = "{}:{} pt:{} rg:{}".format(task_name, self.class_dict[self.class_selected], len(self.point_cache), len(self.region_cache[self.class_selected]))
         text_marker(img, text, (0, 0), (0, 0), FONT, FONTSCALE, THICKNESS, self.render_dict[self.class_selected], background=(255, 255, 255), bgthick=0.3)
         img = self.__patch_legend(img)
         cv2.imshow(self.window_name, img)
@@ -312,4 +312,4 @@ if __name__ == '__main__':
     colorful = cv2.imread(img_path)
     status_dict = {"a": "APPEND", "s": "SAVE", "d": "ADD"}
     while True:
-        labeler.render_image(colorful.copy(), status_dict)
+        labeler.render_image(colorful.copy(), status_dict, "test")

@@ -1,79 +1,106 @@
 import cv2
 import numpy as np
-from multiprocessing import Process
 import time
+import json
 import os
 import sys
 module_ = os.path.abspath(__file__)
 for layer_ in range(3):
     module_ = os.path.dirname(module_)
 sys.path.append(module_)
-from video.video_generator import VideoGenerator
-from detection_labeler import DetectionLabeler
+from classified_detection_labeler import ClassifiedDetectionLabeler
+from multiprocessing import Process, Manager
+
+"""
+this Labeler should be working with a Labeler Server to unpack the videos
+"""
 
 
 class VideoLabeler(object):
-    def __init__(self, image_labeler, video_generator, target_dir, img_ext, cache_length=5, trackbar_name='Frame'):
+    def __init__(self, image_labeler, cache_dict, lock, img_ext=".png", cache_length=100, progress_trackbar_name='Progress Cuts @', cache_trackbar_name='Frame Cache +'):
         self.labeler = image_labeler
-        self.video = video_generator
-        self.target_dir = target_dir
         self.img_ext = img_ext
-        self.result = {}
-        self.process = []
+        self.cache_length = cache_length
+        self.progress_trackbar_name = progress_trackbar_name
+        self.cache_trackbar_name = cache_trackbar_name
+        self.cache_dict = cache_dict
+        self.lock = lock
 
-        self.frame_cache = {}
-        self.trackbar_name = trackbar_name
+    def assign_task(self, source_path, target_path):
+        image_list_tmp = os.listdir(source_path)
+        self.image_list = []
+        for f in image_list_tmp:
+            fname_, ext_ = os.path.splitext(f)
+            if ext_ == self.img_ext:
+                self.image_list.append(f)
+        self.image_list = sorted(self.image_list, key=lambda x: int(os.path.splitext(x)[0]))
+        self.target_path = target_path
+        self.source_path = source_path
+        dirpath, fname = os.path.split(source_path)
+        self.task_name = fname
+
+        self.total_frames = len(self.image_list)
+        self.total_cache = min(self.cache_length, self.total_frames)
 
         def __TrackbarLoading(frame_index):
-            start = np.clip(frame_index - cache_length, 0, self.video.input_frames() - 1).astype(int)
-            end = np.clip(frame_index + cache_length, 0, self.video.input_frames() - 1).astype(int)
-            for _f in range(start, end + 1):
-                if _f not in self.frame_cache.keys():
-                    img_path = os.path.join(self.target_dir, self.video.input_identity(), "images", str(_f) + self.img_ext)
-                    while True:
-                        frame_tmp = cv2.imread(img_path)
-                        if frame_tmp is not None:
-                            self.frame_cache[_f] = frame_tmp
-                            break
-                        else:
-                            time.sleep(1)
-                            print("retry obtain :{}".format(img_path))
-            print(self.frame_cache.keys())
+            def __LoadCache(image_path, image_list, frame_index, cache_length, cache_dict, lock):
+                with lock:
+                    tmp_keys = list(cache_dict.keys())
+                for _diff in range(cache_length):
+                    if frame_index + _diff not in tmp_keys:
+                        img = cv2.imread(os.path.join(image_path, image_list[frame_index + _diff]))
+                        # lbl = json.loads(s: _LoadsString)
+                        with lock:
+                            cache_dict[frame_index + _diff] = {"image": img}
+                    else:
+                        tmp_keys.remove(frame_index + _diff)
+                with lock:
+                    for _t in tmp_keys:
+                        cache_dict.pop(_t)
+            loading = Process(target=__LoadCache, args=(self.source_path, self.image_list, frame_index, self.total_cache, self.cache_dict, self.lock))
+            loading.start()
+            loading.join()
 
-        cv2.createTrackbar(self.trackbar_name, self.labeler.window_name, 0, self.video.input_frames() - 1, __TrackbarLoading)
-        cv2.setTrackbarPos(self.trackbar_name, self.labeler.window_name, 1)
+        def __TrackbarDeactivate(num):
+            pass
+
+        progress_points = self.total_frames - (self.total_cache - 1)
+        cv2.createTrackbar(self.cache_trackbar_name, self.labeler.window_name, 0, self.total_cache - 1, __TrackbarDeactivate)
+        cv2.createTrackbar(self.progress_trackbar_name, self.labeler.window_name, 0, progress_points - 1, __TrackbarLoading)
+        cv2.setTrackbarPos(self.progress_trackbar_name, self.labeler.window_name, 1)
+        cv2.setTrackbarPos(self.progress_trackbar_name, self.labeler.window_name, 0)
 
     def start_label(self, status_dict):
         while True:
-            frame_index = cv2.getTrackbarPos(self.trackbar_name, self.labeler.window_name)
-            print(frame_index)
-            if frame_index in self.frame_cache.keys():
-                print(123)
-                image = self.frame_cache[frame_index]
-                cv2.imshow("winname", image)
-                cv2.waitKey(0)
-                flag, rst = self.labeler.render_image(image.copy(), status_dict)
+            frame_index = cv2.getTrackbarPos(self.progress_trackbar_name, self.labeler.window_name)
+            frame_index += cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
+            if frame_index in self.cache_dict.keys():
+                image = self.cache_dict[frame_index]["image"]
+                flag, rst = self.labeler.render_image(image.copy(), status_dict, self.task_name)
                 if flag:
                     print("check the rst", rst)
+                    cv2.setTrackbarPos(self.trackbar_name, self.labeler.window_name, frame_index + 1)
             else:
-                time.sleep(1)
-
-    def start(self, status_dict):
-        labeling = Process(target=self.start_label, args=(status_dict,))
-        labeling.start()
-        # self.video.split_frames(self.target_dir, self.img_ext)
-        labeling.join()
+                try:
+                    self.labeler.render_image(image.copy(), status_dict, "LOADING...")
+                except Exception as e:
+                    print("loading: {}".format(e))
+                finally:
+                    time.sleep(1)
 
 
 if __name__ == '__main__':
     window_name = "Elementary Labeler"
     window_size = (1600, 1200)
-    video_source = "/mnt/cv/usr/chenzhou/synopsis/video_samples/190625_26_RainyStreets_HD_29.mp4"
-    target_dir = "/mnt/cv/usr/chenzhou/synopsis/label_test"
-    img_ext = ".png"
+    class_dict = {0: "people", 1: "dog", 2: "cat"}
+    render_dict = {0: (139, 236, 255), 1: (58, 58, 139), 2: (226, 43, 138)}
     status_dict = {"a": "APPEND", "s": "SAVE", "d": "ADD"}
 
-    video_generator = VideoGenerator(video_source, False)
-    labeler = DetectionLabeler(window_name, window_size, False, adsorb_ratio=0.003, region_type="rect")
-    vl = VideoLabeler(labeler, video_generator, target_dir, img_ext)
-    vl.start(status_dict)
+    MGR = Manager()
+    CACHE_DICT = MGR.dict()
+    LOCK = MGR.Lock()
+
+    labeler = ClassifiedDetectionLabeler(window_name, window_size, False, region_type="rect", class_dict=class_dict, render_dict=render_dict)
+    vl = VideoLabeler(labeler, CACHE_DICT, LOCK)
+    vl.assign_task("/mnt/cv/usr/chenzhou/Labeler/image/01.mp4", "/mnt/cv/usr/chenzhou/Labeler/label/01.mp4")
+    vl.start_label(status_dict)
