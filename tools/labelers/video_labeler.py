@@ -11,24 +11,29 @@ sys.path.append(module_)
 from classified_detection_labeler import ClassifiedDetectionLabeler
 from multiprocessing import Process, Manager
 from copy import deepcopy
+import urllib.request
+import getpass
 
 """
 this Labeler should be working with a Labeler Server to unpack the videos
 """
 
+FINISH_FLAG_FILE = "FINISHED.json"
+
 
 class VideoLabeler(object):
-    def __init__(self, image_labeler, cache_dict, lock, img_ext=".png", cache_length=100, progress_trackbar_name='Progress Cuts @', cache_trackbar_name='Frame Cache +'):
+    def __init__(self, image_labeler, cache_dict, lock, img_ext=".png", cache_length=100, load_task_length=200, progress_trackbar_name='Progress Cuts @', cache_trackbar_name='Frame Cache +'):
         self.labeler = image_labeler
         self.img_ext = img_ext
         self.cache_length = cache_length
+        self.load_task_length = load_task_length
         self.progress_trackbar_name = progress_trackbar_name
         self.cache_trackbar_name = cache_trackbar_name
         self.cache_dict = cache_dict
         self.lock = lock
         self.empty = (np.ones_like(self.labeler.legend) * 255).astype(np.uint8)
 
-    def assign_task(self, source_path, target_path):
+    def assign_task(self, source_path, target_path, restart):
         image_list_tmp = os.listdir(source_path)
         self.image_list = []
         for f in image_list_tmp:
@@ -36,13 +41,27 @@ class VideoLabeler(object):
             if ext_ == self.img_ext:
                 self.image_list.append(f)
         self.image_list = sorted(self.image_list, key=lambda x: int(os.path.splitext(x)[0]))
+        with open(os.path.join(source_path, FINISH_FLAG_FILE), "r") as f:
+            tmp = json.loads(f.read())
+        if not restart or tmp["last_visit_index"] == 0:
+            if tmp["last_visit_index"] + self.load_task_length * 2 >= len(self.image_list):
+                self.image_list = self.image_list[tmp["last_visit_index"]:]
+                tmp["last_visit_index"] = 0
+            else:
+                self.image_list = self.image_list[tmp["last_visit_index"]:(tmp["last_visit_index"] + self.load_task_length)]
+                tmp["last_visit_index"] += self.load_task_length
+            with open(os.path.join(source_path, FINISH_FLAG_FILE), "w") as f:
+                f.write(json.dumps(tmp))
+        else:
+            self.image_list = self.image_list[(tmp["last_visit_index"] - self.load_task_length):tmp["last_visit_index"]]
+
         self.target_path = target_path
         self.source_path = source_path
         dirpath, fname = os.path.split(source_path)
         self.task_name = fname
 
         self.total_frames = len(self.image_list)
-        self.total_cache = min(self.cache_length, self.total_frames)
+        self.total_cache = min(self.cache_length, self.total_frames - 1)
         self.progress_points = self.total_frames - (self.total_cache - 1)
 
         def __TrackbarLoading(frame_index):
@@ -161,9 +180,25 @@ class VideoLabeler(object):
 if __name__ == '__main__':
     window_name = "Elementary Labeler"
     window_size = (1600, 1200)
-    class_dict = {0: "people", 1: "dog", 2: "cat"}
-    render_dict = {0: (139, 236, 255), 1: (58, 58, 139), 2: (226, 43, 138)}
-    status_dict = {"a": "APPEND", "s": "SAVE", "d": "ADD", "q": "QUIT"}
+
+    HOST_PORT = "http://0.0.0.0:1207"
+    RESTART_TASK = 0
+    RESTART_CACHE = 0
+
+    assignment_url = HOST_PORT + "/assignment?user=" + getpass.getuser() + "&restart=" + str(RESTART_TASK)
+    while(True):
+        response = urllib.request.urlopen(assignment_url)
+        data = json.loads(response.read().decode("utf-8"))
+        if len(data["tasks"]) > 0:
+            IMAGE_ROOT = os.path.join(data["image_root"], data["tasks"][0])
+            LABEL_ROOT = os.path.join(data["label_root"], data["tasks"][0])
+            render_dict = data["render_dict"]
+            class_dict = data["class_dict"]
+            status_dict = data["status_dict"]
+            break
+        else:
+            print("not getting task, waiting 10 sec: {}".format(data))
+            time.sleep(10)
 
     MGR = Manager()
     CACHE_DICT = MGR.dict()
@@ -171,5 +206,5 @@ if __name__ == '__main__':
 
     labeler = ClassifiedDetectionLabeler(window_name, window_size, False, region_type="rect", class_dict=class_dict, render_dict=render_dict)
     vl = VideoLabeler(labeler, CACHE_DICT, LOCK)
-    vl.assign_task("/mnt/cv/usr/chenzhou/Labeler/image/01.mp4", "/mnt/cv/usr/chenzhou/Labeler/label/01.mp4")
+    vl.assign_task(IMAGE_ROOT, LABEL_ROOT, RESTART_CACHE)
     vl.start_label(status_dict)
