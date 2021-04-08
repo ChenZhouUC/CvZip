@@ -10,6 +10,7 @@ for layer_ in range(3):
 sys.path.append(module_)
 from classified_detection_labeler import ClassifiedDetectionLabeler
 from multiprocessing import Process, Manager
+from copy import deepcopy
 
 """
 this Labeler should be working with a Labeler Server to unpack the videos
@@ -45,31 +46,91 @@ class VideoLabeler(object):
         self.progress_points = self.total_frames - (self.total_cache - 1)
 
         def __TrackbarLoading(frame_index):
-            def __LoadCache(image_path, image_list, frame_index, cache_length, cache_dict, lock):
+            def __transform_label(jsondict, class_dict):
+                rst = {}
+                for k in class_dict.keys():
+                    rst[k] = []
+                bbox_list = jsondict["annotations"]
+                for b in bbox_list:
+                    lt = tuple(b["bbox"][:2])
+                    rd = tuple(b["bbox"][2:])
+                    rt = (rd[0], lt[1])
+                    ld = (lt[0], rd[1])
+                    if b["category_id"] in rst:
+                        rst[b["category_id"]].append([lt, rt, rd, ld])
+                    else:
+                        rst[b["category_id"]] = [[lt, rt, rd, ld]]
+                return rst
+
+            def __load_cache(image_path, image_list, label_path, frame_index, cache_length, cache_dict, lock):
                 with lock:
-                    tmp_keys = list(cache_dict.keys())
-                for _diff in range(cache_length):
+                    tmp_keys = np.array((cache_dict.keys()))
+                if frame_index not in tmp_keys:
+                    adding_order = range(cache_length)
+                    rmv_indeces = tmp_keys[tmp_keys >= frame_index + cache_length]
+                else:
+                    adding_order = range(cache_length - 1, -1, -1)
+                    rmv_indeces = tmp_keys[tmp_keys < frame_index]
+                for _diff in adding_order:
                     if frame_index + _diff not in tmp_keys:
                         img = cv2.imread(os.path.join(image_path, image_list[frame_index + _diff]))
-                        # lbl = json.loads(s: _LoadsString)
                         with lock:
                             cache_dict[frame_index + _diff] = {"image": img}
+                        label_name = os.path.join(label_path, os.path.splitext(image_list[frame_index + _diff])[0] + ".json")
+                        if os.path.exists(label_name):
+                            with open(label_name, "r") as f:
+                                lbl = __transform_label(json.loads(f.read()), self.labeler.class_dict)
+                            with lock:
+                                tmp = cache_dict[frame_index + _diff]
+                                tmp["label"] = lbl
+                                cache_dict[frame_index + _diff] = tmp
                     else:
-                        tmp_keys.remove(frame_index + _diff)
+                        break
                 with lock:
-                    for _t in tmp_keys:
+                    for _t in rmv_indeces:
                         cache_dict.pop(_t)
-            loading = Process(target=__LoadCache, args=(self.source_path, self.image_list, frame_index, self.total_cache, self.cache_dict, self.lock))
+            loading = Process(target=__load_cache, args=(self.source_path, self.image_list, self.target_path, frame_index, self.total_cache, self.cache_dict, self.lock))
             loading.start()
             loading.join()
+            now_cache_at = cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
+            if now_cache_at < self.total_cache - 1:
+                cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, now_cache_at + 1)
+            else:
+                cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, now_cache_at - 1)
+            cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, now_cache_at)
 
         def __TrackbarDeactivate(num):
             pass
 
-        cv2.createTrackbar(self.cache_trackbar_name, self.labeler.window_name, 0, self.total_cache - 1, __TrackbarDeactivate)
+        def __TrackbarRender(frame_index):
+            frame_index += cv2.getTrackbarPos(self.progress_trackbar_name, self.labeler.window_name)
+            with self.lock:
+                if "label" in self.cache_dict[frame_index].keys():
+                    label = self.cache_dict[frame_index]["label"]
+                    self.labeler.region_cache = deepcopy(label)
+                else:
+                    self.labeler.region_cache = {k: [] for k in self.labeler.class_dict.keys()}
+
+        cv2.createTrackbar(self.cache_trackbar_name, self.labeler.window_name, 0, self.total_cache - 1, __TrackbarRender)
         cv2.createTrackbar(self.progress_trackbar_name, self.labeler.window_name, 0, self.progress_points - 1, __TrackbarLoading)
         cv2.setTrackbarPos(self.progress_trackbar_name, self.labeler.window_name, 1)
         cv2.setTrackbarPos(self.progress_trackbar_name, self.labeler.window_name, 0)
+
+    def record_label(self, label_dict, image_abs_path):
+        img_dict = {"image_name": image_abs_path,
+                    "annotations": []}
+        for k, v in label_dict.items():
+            category_name = self.labeler.class_dict[k]
+            for b in v:
+                bbox = np.array(b)
+                left_top = bbox.min(axis=0).tolist()
+                right_down = bbox.max(axis=0).tolist()
+                item = {"bbox": left_top + right_down,
+                        "category_id": k,
+                        "name": category_name
+                        }
+                img_dict["annotations"].append(item)
+        return img_dict
 
     def start_label(self, status_dict):
         self.labeler.render_image(self.empty.copy(), status_dict, "LOADING...")
@@ -81,7 +142,13 @@ class VideoLabeler(object):
                 image = self.cache_dict[frame_index]["image"]
                 flag, rst = self.labeler.render_image(image.copy(), status_dict, self.task_name)
                 if flag:
-                    print("check the rst", rst)
+                    tmp = self.cache_dict[frame_index]
+                    tmp["label"] = rst
+                    self.cache_dict[frame_index] = tmp
+                    json_rst = self.record_label(rst, os.path.join(self.source_path, self.image_list[frame_index]))
+                    fname_id, ext = os.path.splitext(self.image_list[frame_index])
+                    with open(os.path.join(self.target_path, fname_id + ".json"), "w") as f:
+                        f.write(json.dumps(json_rst))
                     if cache_pt < self.total_cache - 1:
                         cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, cache_pt + 1)
                     elif progress_pt < self.progress_points - 1:
