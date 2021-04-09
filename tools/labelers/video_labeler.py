@@ -22,7 +22,7 @@ FINISH_FLAG_FILE = "FINISHED.json"
 
 
 class VideoLabeler(object):
-    def __init__(self, image_labeler, cache_dict, lock, img_ext=".png", cache_length=100, load_task_length=200, step_jump=30, progress_trackbar_prefix='Progress Cuts x', cache_trackbar_name='Frame Cache +'):
+    def __init__(self, image_labeler, cache_dict, lock, img_ext=".png", cache_length=100, load_task_length=500, step_jump=50, progress_trackbar_prefix='Progress Cuts x', cache_trackbar_name='Frame Cache +'):
         self.labeler = image_labeler
         self.img_ext = img_ext
         self.cache_length = cache_length
@@ -191,20 +191,32 @@ class VideoLabeler(object):
 
 
 if __name__ == '__main__':
+
+    import argparse
+    parser = argparse.ArgumentParser(description='HOST:PORT RestartTask RestartCache MountPrefix')
+    parser.add_argument("--host", type=str, required=True, help="HOST:PORT")
+    parser.add_argument("--task", type=int, required=True, help="1/0")
+    parser.add_argument("--cache", type=int, required=True, help="1/0")
+    parser.add_argument("--prefix", type=str, required=True, help="MountPrefix /data")
+
+    args = parser.parse_args()
+
     window_name = "Elementary Labeler"
     window_size = (1600, 1200)
 
-    HOST_PORT = "http://0.0.0.0:1207"
-    RESTART_TASK = 0
-    RESTART_CACHE = 0
+    HOST_PORT = args.host
+    RESTART_TASK = args.task
+    RESTART_CACHE = args.cache
+    PREFIX = args.prefix
 
     assignment_url = HOST_PORT + "/assignment?user=" + getpass.getuser() + "&restart=" + str(RESTART_TASK)
     while(True):
         response = urllib.request.urlopen(assignment_url)
         data = json.loads(response.read().decode("utf-8"))
         if len(data["tasks"]) > 0:
-            IMAGE_ROOT = os.path.join(data["image_root"], data["tasks"][0])
-            LABEL_ROOT = os.path.join(data["label_root"], data["tasks"][0])
+            IMAGE_ROOT = os.path.join(PREFIX, data["image_root"][len(data["prefix"]):].strip('/'), data["tasks"][0].strip('/'))
+            LABEL_ROOT = os.path.join(PREFIX, data["label_root"][len(data["prefix"]):].strip('/'), data["tasks"][0].strip('/'))
+            print(IMAGE_ROOT, LABEL_ROOT)
             render_dict = data["render_dict"]
             class_dict = data["class_dict"]
             status_dict = data["status_dict"]
