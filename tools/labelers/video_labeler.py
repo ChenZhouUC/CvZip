@@ -22,12 +22,13 @@ FINISH_FLAG_FILE = "FINISHED.json"
 
 
 class VideoLabeler(object):
-    def __init__(self, image_labeler, cache_dict, lock, img_ext=".png", cache_length=100, load_task_length=200, progress_trackbar_name='Progress Cuts @', cache_trackbar_name='Frame Cache +'):
+    def __init__(self, image_labeler, cache_dict, lock, img_ext=".png", cache_length=100, load_task_length=200, step_jump=30, progress_trackbar_prefix='Progress Cuts x', cache_trackbar_name='Frame Cache +'):
         self.labeler = image_labeler
         self.img_ext = img_ext
         self.cache_length = cache_length
         self.load_task_length = load_task_length
-        self.progress_trackbar_name = progress_trackbar_name
+        self.step_jump = step_jump
+        self.progress_trackbar_prefix = progress_trackbar_prefix
         self.cache_trackbar_name = cache_trackbar_name
         self.cache_dict = cache_dict
         self.lock = lock
@@ -62,7 +63,11 @@ class VideoLabeler(object):
 
         self.total_frames = len(self.image_list)
         self.total_cache = min(self.cache_length, self.total_frames - 1)
-        self.progress_points = self.total_frames - (self.total_cache - 1)
+        self.total_jump = min(self.step_jump, self.total_cache - 1)
+        self.progress_trackbar_name = self.progress_trackbar_prefix + str(self.total_jump)
+        assert self.total_jump >= 1
+        self.progress_points = np.ceil((self.total_frames - self.total_cache) / self.total_jump).astype(int) + 1
+        self.last_progress_cache = self.total_frames - (self.progress_points - 1) * self.total_jump
 
         def __TrackbarLoading(frame_index):
             def __transform_label(jsondict, class_dict):
@@ -91,6 +96,8 @@ class VideoLabeler(object):
                     adding_order = range(cache_length - 1, -1, -1)
                     rmv_indeces = tmp_keys[tmp_keys < frame_index]
                 for _diff in adding_order:
+                    if frame_index + _diff >= self.total_frames:
+                        continue
                     if frame_index + _diff not in tmp_keys:
                         img = cv2.imread(os.path.join(image_path, image_list[frame_index + _diff]))
                         with lock:
@@ -108,21 +115,27 @@ class VideoLabeler(object):
                 with lock:
                     for _t in rmv_indeces:
                         cache_dict.pop(_t)
-            loading = Process(target=__load_cache, args=(self.source_path, self.image_list, self.target_path, frame_index, self.total_cache, self.cache_dict, self.lock))
+            loading = Process(target=__load_cache, args=(self.source_path, self.image_list, self.target_path, frame_index * self.total_jump, self.total_cache, self.cache_dict, self.lock))
             loading.start()
             loading.join()
-            now_cache_at = cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
-            if now_cache_at < self.total_cache - 1:
-                cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, now_cache_at + 1)
+            if frame_index < self.progress_points - 1:
+                now_cache_at = cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
+                if now_cache_at < self.total_cache - 1:
+                    cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, now_cache_at + 1)
+                else:
+                    cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, now_cache_at - 1)
+                cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, now_cache_at)
             else:
-                cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, now_cache_at - 1)
-            cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, now_cache_at)
+                cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, 0)
 
         def __TrackbarDeactivate(num):
             pass
 
         def __TrackbarRender(frame_index):
-            frame_index += cv2.getTrackbarPos(self.progress_trackbar_name, self.labeler.window_name)
+            frame_index += cv2.getTrackbarPos(self.progress_trackbar_name, self.labeler.window_name) * self.total_jump
+            if frame_index >= self.total_frames:
+                cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, self.last_progress_cache - 1)
+                return
             with self.lock:
                 if "label" in self.cache_dict[frame_index].keys():
                     label = self.cache_dict[frame_index]["label"]
@@ -156,7 +169,7 @@ class VideoLabeler(object):
         while True:
             progress_pt = cv2.getTrackbarPos(self.progress_trackbar_name, self.labeler.window_name)
             cache_pt = cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
-            frame_index = progress_pt + cache_pt
+            frame_index = progress_pt * self.total_jump + cache_pt
             if frame_index in self.cache_dict.keys():
                 image = self.cache_dict[frame_index]["image"]
                 flag, rst = self.labeler.render_image(image.copy(), status_dict, self.task_name)
