@@ -14,7 +14,7 @@ FONT, FONTSCALE, THICKNESS = cv2.FONT_HERSHEY_COMPLEX, 1.5, 2
 
 
 class ClassifiedDetectionLabeler(ElementaryLabeler):
-    def __init__(self, window_name, window_size, adsorb_opt=False, adsorb_ratio=0.005, dist_norm=2, region_type="rect", class_dict={0: "default"}, render_dict={0: (255, 0, 0)}):
+    def __init__(self, window_name, window_size, adsorb_opt=False, adsorb_ratio=0.005, dist_norm=2, region_type="rect", class_dict={0: "default"}, render_dict={0: (255, 0, 0)}, status_dict=None):
         super(ClassifiedDetectionLabeler, self).__init__(window_name, window_size, adsorb_opt, adsorb_ratio, dist_norm)
         assert region_type.lower() in ["rect", "poly"]
         assert type(class_dict) == dict and len(class_dict.keys()) > 0
@@ -27,26 +27,38 @@ class ClassifiedDetectionLabeler(ElementaryLabeler):
         self.region_cache = {k: [] for k in self.class_dict.keys()}
         self.region_type = region_type
 
-        self.__legend_panel()
+        self.__legend_panel(status_dict=status_dict)
 
-    def __legend_panel(self, cubic_shink=1, background=(255, 255, 255), text_color=(0, 0, 0), spacing=10):
+    def __legend_panel(self, cubic_shink=1, background=(255, 255, 255), text_color=(0, 0, 0), spacing=10, status_dict=None):
         width = 0
         height = 0
         for k in self.class_list:
             (label_width, label_height), baseline = cv2.getTextSize(" " + str(k) + " " + self.class_dict[k], FONT, FONTSCALE, THICKNESS)
             width = max(width, label_width)
             height = max(height, label_height + baseline)
+        if status_dict is None:
+            status_dict = {}
+        operation_instruction = ""
+        for k, v in status_dict.items():
+            opt_text = str(k) + ": " + str(v)
+            operation_instruction += (opt_text + "\n")
+            (label_width, label_height), baseline = cv2.getTextSize(opt_text, FONT, FONTSCALE, THICKNESS)
+            width = max(width, label_width)
+            height = max(height, label_height + baseline)
         cubic_size = height - 2 * cubic_shink
         cubic_shink = cubic_shink if cubic_size > 0 else 0
         cubic_size = cubic_size if cubic_size > 0 else height
         width = 2 * spacing + width + cubic_size
-        total_height = height * len(self.class_list) + spacing * (len(self.class_list) + 1)
+        total_height = height * (len(self.class_list) + len(status_dict)) + spacing * (len(self.class_list) + 2)
         channels = len(background)
         panel = (np.ones([total_height, width, channels]) * np.array(background)).astype(np.uint8)
         for _i, k in enumerate(self.class_list):
             row_start = _i * height + (_i + 1) * spacing
             panel = rectangle_marker(panel, [[cubic_shink + spacing, row_start], [cubic_shink + spacing + cubic_size, row_start + cubic_size]], self.render_dict[k], 1, 0.8, True, 1)
-            panel = text_marker(panel, " " + str(k) + " " + self.class_dict[k], (spacing + height, row_start), (0, 0), FONT, FONTSCALE, THICKNESS, text_color)
+            text_marker(panel, " " + str(k) + " " + self.class_dict[k], (spacing + height, row_start), (0, 0), FONT, FONTSCALE, THICKNESS, text_color)
+        row_start = len(self.class_list) * height + (len(self.class_list) + 1) * spacing
+        panel = rectangle_marker(panel, [[spacing, row_start], [width - spacing, row_start + (label_height + baseline) * len(status_dict)]], (64, 64, 64), 1, 0.8, True, 1)
+        text_marker(panel, operation_instruction, (spacing, row_start), (0, 0), FONT, FONTSCALE, THICKNESS, (255, 255, 255))
         self.legend = panel
 
     def __patch_legend(self, img, background=(255, 255, 255)):

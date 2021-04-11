@@ -46,15 +46,23 @@ def rectangle_marker(img, rectangle, color, thickness, fill, point, radius, epsi
 
 
 def text_marker(img, text, coordinate, locator, font, fontscale, thickness, color, background=None, bgthick=0.5):
-    (label_width, label_height), baseline = cv2.getTextSize(text, font, fontscale, thickness)
-    locator_x, locator_y = np.array(locator)[:2] * np.array([label_width, label_height + baseline]).round()
-    shift = np.array([- locator_x, label_height - locator_y])
-    coordinate = tuple((np.array(coordinate) + shift).round().astype(int))
+    text_list = text.split("\n")
+    if len(text_list) == 0:
+        return img
+    label_width_max = 0
+    for text in text_list:
+        (label_width, label_height), baseline = cv2.getTextSize(text, font, fontscale, thickness)
+        label_width_max = max(label_width_max, label_width)
+    locator_x, locator_y = np.array(locator)[:2] * np.array([label_width_max, (label_height + baseline) * len(text_list)])
     if background is not None:
-        left_top_corner = [coordinate[0], coordinate[1] - label_height]
-        right_down_corner = [coordinate[0] + label_width, coordinate[1] + baseline]
+        left_top_corner = [coordinate[0] - locator_x, coordinate[1] - locator_y]
+        right_down_corner = [coordinate[0] - locator_x + label_width_max, coordinate[1] - locator_y + (label_height + baseline) * len(text_list)]
         img = rectangle_marker(img, [left_top_corner, right_down_corner], background, thickness, bgthick, False, None)
-    return cv2.putText(img, text, coordinate, font, fontscale, color, thickness)
+    for _i, text in enumerate(text_list):
+        shift_ = np.array([- locator_x, (label_height + baseline) * _i + label_height - locator_y])
+        coordinate_ = tuple((np.array(coordinate) + shift_).round().astype(int))
+        cv2.putText(img, text, coordinate_, font, fontscale, color, thickness)
+    return img
 
 
 if __name__ == "__main__":
@@ -65,6 +73,6 @@ if __name__ == "__main__":
     colorful = rectangle_marker(colorful, c, (0, 255, 0), 2, fill=0.5, point=0.5, radius=5)
     coord = (150, 150)
     # cv2.circle(colorful, coord, 5, (0, 255, 255), -1)
-    text_marker(colorful, "draw", coord, (0.5, 0.5), cv2.FONT_HERSHEY_TRIPLEX, 1, 1, 0, background=(255, 255, 255), bgthick=0.8)
+    text_marker(colorful, "draw\ntest\n newtest", coord, (0.5, 0.5), cv2.FONT_HERSHEY_TRIPLEX, 1, 1, (0, 0, 0), background=(255, 255, 255), bgthick=0.3)
     cv2.imshow("winname", colorful)
     cv2.waitKey(0)

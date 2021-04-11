@@ -83,7 +83,8 @@ class VideoLabeler(object):
                     if b["category_id"] in rst:
                         rst[b["category_id"]].append([lt, rt, rd, ld])
                     else:
-                        rst[b["category_id"]] = [[lt, rt, rd, ld]]
+                        pass
+                        # rst[b["category_id"]] = [[lt, rt, rd, ld]]
                 return rst
 
             def __load_cache(image_path, image_list, label_path, frame_index, cache_length, cache_dict, lock):
@@ -229,7 +230,7 @@ if __name__ == '__main__':
     CACHE_DICT = MGR.dict()
     LOCK = MGR.Lock()
 
-    labeler = ClassifiedDetectionLabeler(window_name, window_size, False, region_type="rect", class_dict=class_dict, render_dict=render_dict)
+    labeler = ClassifiedDetectionLabeler(window_name, window_size, False, region_type="rect", class_dict=class_dict, render_dict=render_dict, status_dict=status_dict)
     vl = VideoLabeler(labeler, CACHE_DICT, LOCK)
     vl.assign_task(IMAGE_ROOT, LABEL_ROOT, RESTART_CACHE)
     vl.start_label(status_dict)
