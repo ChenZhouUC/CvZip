@@ -26,6 +26,7 @@ class ClassifiedDetectionLabeler(ElementaryLabeler):
         self.region_shift = None
         self.region_cache = {k: [] for k in self.class_dict.keys()}
         self.region_type = region_type
+        self.prediction_status = False
 
         self.__legend_panel(status_dict=status_dict)
 
@@ -66,9 +67,17 @@ class ClassifiedDetectionLabeler(ElementaryLabeler):
         legend_height = self.legend.shape[0]
         if height < legend_height:
             patch_bottom = (np.ones([legend_height - height, img.shape[1], img.shape[2]]) * np.array(background)).astype(np.uint8)
+            if self.prediction_status:
+                text_marker(patch_bottom, "INTERPOLATION", (0, 0), (0, 0), FONT, FONTSCALE, THICKNESS, (0, 0, 255))
+            else:
+                text_marker(patch_bottom, "LABELING", (0, 0), (0, 0), FONT, FONTSCALE, THICKNESS, (0, 255, 0))
             img = np.concatenate((img, patch_bottom), axis=0)
         else:
             patch_bottom = (np.ones([height - legend_height, self.legend.shape[1], self.legend.shape[2]]) * np.array(background)).astype(np.uint8)
+            if self.prediction_status:
+                text_marker(patch_bottom, "INTERPOLATION", (0, 0), (0, 0), FONT, FONTSCALE, THICKNESS, (0, 0, 255))
+            else:
+                text_marker(patch_bottom, "LABELING", (0, 0), (0, 0), FONT, FONTSCALE, THICKNESS, (0, 255, 0))
             legend = np.concatenate((self.legend, patch_bottom), axis=0)
         img = np.concatenate((img, legend), axis=1)
         return img

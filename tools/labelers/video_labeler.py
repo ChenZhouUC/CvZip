@@ -9,6 +9,7 @@ for layer_ in range(3):
     module_ = os.path.dirname(module_)
 sys.path.append(module_)
 from classified_detection_labeler import ClassifiedDetectionLabeler
+from algorithms.Hungarian import Hungarian
 from multiprocessing import Process, Manager
 from copy import deepcopy
 import urllib.request
@@ -22,7 +23,7 @@ FINISH_FLAG_FILE = "FINISHED.json"
 
 
 class VideoLabeler(object):
-    def __init__(self, image_labeler, cache_dict, lock, prefix, img_ext=".png", cache_length=100, load_task_length=500, step_jump=50, progress_trackbar_prefix='Progress Cuts x', cache_trackbar_name='Frame Cache +'):
+    def __init__(self, image_labeler, cache_dict, interp_list, lock, prefix, img_ext=".png", cache_length=100, load_task_length=500, step_jump=50, progress_trackbar_prefix='Progress Cuts x', cache_trackbar_name='Frame Cache +'):
         self.labeler = image_labeler
         self.img_ext = img_ext
         self.cache_length = cache_length
@@ -31,6 +32,8 @@ class VideoLabeler(object):
         self.progress_trackbar_prefix = progress_trackbar_prefix
         self.cache_trackbar_name = cache_trackbar_name
         self.cache_dict = cache_dict
+        self.interp_list = interp_list
+        self.interp_list["index"] = []
         self.lock = lock
         self.empty = (np.ones_like(self.labeler.legend) * 255).astype(np.uint8)
         self.prefix = prefix
@@ -88,7 +91,7 @@ class VideoLabeler(object):
                         # rst[b["category_id"]] = [[lt, rt, rd, ld]]
                 return rst
 
-            def __load_cache(image_path, image_list, label_path, frame_index, cache_length, cache_dict, lock):
+            def __load_cache(image_path, image_list, label_path, frame_index, cache_length, cache_dict, interp_list, lock):
                 with lock:
                     tmp_keys = np.array((cache_dict.keys()))
                 if frame_index not in tmp_keys:
@@ -112,12 +115,25 @@ class VideoLabeler(object):
                                 tmp = cache_dict[frame_index + _diff]
                                 tmp["label"] = lbl
                                 cache_dict[frame_index + _diff] = tmp
+                                order_list = np.array(interp_list["index"])
+                                indeces_ = np.argwhere(frame_index + _diff <= order_list)
+                                if len(indeces_) > 0:
+                                    last_index_ = indeces_[0][0]
+                                    interp_list["index"] = order_list[:last_index_].tolist() + [frame_index + _diff] + order_list[last_index_:].tolist()
+                                else:
+                                    interp_list["index"] = order_list.tolist() + [frame_index + _diff]
                     else:
                         break
                 with lock:
                     for _t in rmv_indeces:
                         cache_dict.pop(_t)
-            loading = Process(target=__load_cache, args=(self.source_path, self.image_list, self.target_path, frame_index * self.total_jump, self.total_cache, self.cache_dict, self.lock))
+                        try:
+                            tmp = interp_list["index"]
+                            tmp.remove(_t)
+                            interp_list["index"] = tmp
+                        except Exception:
+                            pass
+            loading = Process(target=__load_cache, args=(self.source_path, self.image_list, self.target_path, frame_index * self.total_jump, self.total_cache, self.cache_dict, self.interp_list, self.lock))
             loading.start()
             loading.join()
             if frame_index < self.progress_points - 1:
@@ -134,6 +150,31 @@ class VideoLabeler(object):
             pass
 
         def __TrackbarRender(frame_index):
+            def __calc_bbox_dist(bboxlist1, bboxlist2, interp):
+                cost_mat = np.zeros([len(bboxlist1), len(bboxlist2)])
+                bboxlist1 = bboxlist1
+                bboxlist2 = bboxlist2
+                for _i, _b1 in enumerate(bboxlist1):
+                    lt_1, rd_1 = np.min(_b1, axis=0), np.max(_b1, axis=0)
+                    for _j, _b2 in enumerate(bboxlist2):
+                        lt_2, rd_2 = np.min(_b2, axis=0), np.max(_b2, axis=0)
+                        ratio = (rd_2 - lt_2) / (rd_1 - lt_1)
+                        cost_mat[_i, _j] = np.linalg.norm(((rd_1 + lt_1) - (rd_2 + lt_2)) / 2) * (1 + np.abs(np.log(ratio)).mean())
+                hungarian = Hungarian()
+                hungarian.calculate(cost_mat)
+                paired = hungarian.get_results()
+                rst_bbox = []
+                for _p in paired:
+                    _b1 = bboxlist1[_p[0]]
+                    _b2 = bboxlist2[_p[1]]
+                    lt_1, rd_1 = np.min(_b1, axis=0), np.max(_b1, axis=0)
+                    lt_2, rd_2 = np.min(_b2, axis=0), np.max(_b2, axis=0)
+                    lt_ = (lt_1 * (1 - interp) + lt_2 * interp).astype(int).tolist()
+                    rd_ = (rd_1 * (1 - interp) + rd_2 * interp).astype(int).tolist()
+                    new = [tuple(lt_), (lt_[0], rd_[1]), tuple(rd_), (rd_[0], lt_[1])]
+                    rst_bbox.append(new)
+                return rst_bbox
+
             frame_index += cv2.getTrackbarPos(self.progress_trackbar_name, self.labeler.window_name) * self.total_jump
             if frame_index >= self.total_frames:
                 cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, self.last_progress_cache - 1)
@@ -142,8 +183,29 @@ class VideoLabeler(object):
                 if "label" in self.cache_dict[frame_index].keys():
                     label = self.cache_dict[frame_index]["label"]
                     self.labeler.region_cache = deepcopy(label)
+                    self.labeler.prediction_status = False
                 else:
-                    self.labeler.region_cache = {k: [] for k in self.labeler.class_dict.keys()}
+                    ready = np.array(self.interp_list["index"])
+                    index_ = np.argwhere(frame_index >= ready)
+                    self.labeler.prediction_status = True
+                    if 0 < len(index_) < len(ready):
+                        begin_ = ready[index_[-1][0]]
+                        end_ = ready[index_[-1][0] + 1]
+                        interp_factor = (frame_index - begin_) / (end_ - begin_)
+                        interp_1 = self.cache_dict[begin_]["label"]
+                        interp_2 = self.cache_dict[end_]["label"]
+                        rst = {}
+                        for k in self.labeler.class_dict.keys():
+                            interp_1_bboxes = interp_1[k]
+                            interp_2_bboxes = interp_2[k]
+                            if len(interp_1_bboxes) > 0 and len(interp_2_bboxes) > 0:
+                                rst_bbox = __calc_bbox_dist(interp_1_bboxes, interp_2_bboxes, interp_factor)
+                                rst[k] = rst_bbox
+                            else:
+                                rst[k] = []
+                        self.labeler.region_cache = deepcopy(rst)
+                    else:
+                        self.labeler.region_cache = {k: [] for k in self.labeler.class_dict.keys()}
 
         cv2.createTrackbar(self.cache_trackbar_name, self.labeler.window_name, 0, self.total_cache - 1, __TrackbarRender)
         cv2.createTrackbar(self.progress_trackbar_name, self.labeler.window_name, 0, self.progress_points - 1, __TrackbarLoading)
@@ -168,17 +230,29 @@ class VideoLabeler(object):
 
     def start_label(self, status_dict):
         self.labeler.render_image(self.empty.copy(), status_dict, "LOADING...")
+        with self.lock:
+            cache_dict_copy = list(self.cache_dict.keys())
         while True:
             progress_pt = cv2.getTrackbarPos(self.progress_trackbar_name, self.labeler.window_name)
             cache_pt = cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
             frame_index = progress_pt * self.total_jump + cache_pt
-            if frame_index in self.cache_dict.keys():
-                image = self.cache_dict[frame_index]["image"]
+            if frame_index in cache_dict_copy:
+                with self.lock:
+                    image = self.cache_dict[frame_index]["image"]
                 flag, rst = self.labeler.render_image(image.copy(), status_dict, self.task_name)
                 if flag:
-                    tmp = self.cache_dict[frame_index]
-                    tmp["label"] = rst
-                    self.cache_dict[frame_index] = tmp
+                    with self.lock:
+                        tmp = self.cache_dict[frame_index]
+                        tmp["label"] = rst
+                        self.cache_dict[frame_index] = tmp
+                        if frame_index not in self.interp_list["index"]:
+                            order_list = np.array(self.interp_list["index"])
+                            indeces_ = np.argwhere(frame_index <= order_list)
+                            if len(indeces_) > 0:
+                                last_index_ = indeces_[0][0]
+                                self.interp_list["index"] = order_list[:last_index_].tolist() + [frame_index] + order_list[last_index_:].tolist()
+                            else:
+                                self.interp_list["index"] = order_list.tolist() + [frame_index]
                     json_rst = self.record_label(rst, os.path.join(self.source_path, self.image_list[frame_index]))
                     fname_id, ext = os.path.splitext(self.image_list[frame_index])
                     with open(os.path.join(self.target_path, fname_id + ".json"), "w") as f:
@@ -229,9 +303,10 @@ if __name__ == '__main__':
 
     MGR = Manager()
     CACHE_DICT = MGR.dict()
+    INTERP_LIST = MGR.dict()
     LOCK = MGR.Lock()
 
     labeler = ClassifiedDetectionLabeler(window_name, window_size, False, region_type="rect", class_dict=class_dict, render_dict=render_dict, status_dict=status_dict)
-    vl = VideoLabeler(labeler, CACHE_DICT, LOCK, PREFIX)
+    vl = VideoLabeler(labeler, CACHE_DICT, INTERP_LIST, LOCK, PREFIX)
     vl.assign_task(IMAGE_ROOT, LABEL_ROOT, RESTART_CACHE)
     vl.start_label(status_dict)
