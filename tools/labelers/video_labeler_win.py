@@ -10,7 +10,6 @@ for layer_ in range(3):
 sys.path.append(module_)
 from classified_detection_labeler import ClassifiedDetectionLabeler
 from algorithms.Hungarian import Hungarian
-from multiprocessing import Process, Manager
 from copy import deepcopy
 import urllib.request
 import getpass
@@ -92,8 +91,7 @@ class VideoLabeler(object):
                 return rst
 
             def __load_cache(image_path, image_list, label_path, frame_index, cache_length, cache_dict, interp_list, lock):
-                with lock:
-                    tmp_keys = np.array(list(cache_dict.keys()))
+                tmp_keys = np.array(list(cache_dict.keys()))
                 if frame_index not in tmp_keys:
                     adding_order = range(cache_length)
                     rmv_indeces = tmp_keys[tmp_keys >= frame_index + cache_length]
@@ -105,37 +103,32 @@ class VideoLabeler(object):
                         continue
                     if frame_index + _diff not in tmp_keys:
                         img = cv2.imread(os.path.join(image_path, image_list[frame_index + _diff]))
-                        with lock:
-                            cache_dict[frame_index + _diff] = {"image": img}
+                        cache_dict[frame_index + _diff] = {"image": img}
                         label_name = os.path.join(label_path, os.path.splitext(image_list[frame_index + _diff])[0] + ".json")
                         if os.path.exists(label_name):
                             with open(label_name, "r") as f:
                                 lbl = __transform_label(json.loads(f.read()), self.labeler.class_dict)
-                            with lock:
-                                tmp = cache_dict[frame_index + _diff]
-                                tmp["label"] = lbl
-                                cache_dict[frame_index + _diff] = tmp
-                                order_list = np.array(interp_list["index"])
-                                indeces_ = np.argwhere(frame_index + _diff <= order_list)
-                                if len(indeces_) > 0:
-                                    last_index_ = indeces_[0][0]
-                                    interp_list["index"] = order_list[:last_index_].tolist() + [frame_index + _diff] + order_list[last_index_:].tolist()
-                                else:
-                                    interp_list["index"] = order_list.tolist() + [frame_index + _diff]
+                            tmp = cache_dict[frame_index + _diff]
+                            tmp["label"] = lbl
+                            cache_dict[frame_index + _diff] = tmp
+                            order_list = np.array(interp_list["index"])
+                            indeces_ = np.argwhere(frame_index + _diff <= order_list)
+                            if len(indeces_) > 0:
+                                last_index_ = indeces_[0][0]
+                                interp_list["index"] = order_list[:last_index_].tolist() + [frame_index + _diff] + order_list[last_index_:].tolist()
+                            else:
+                                interp_list["index"] = order_list.tolist() + [frame_index + _diff]
                     else:
                         break
-                with lock:
-                    for _t in rmv_indeces:
-                        cache_dict.pop(_t)
-                        try:
-                            tmp = interp_list["index"]
-                            tmp.remove(_t)
-                            interp_list["index"] = tmp
-                        except Exception:
-                            pass
-            loading = Process(target=__load_cache, args=(self.source_path, self.image_list, self.target_path, frame_index * self.total_jump, self.total_cache, self.cache_dict, self.interp_list, self.lock))
-            loading.start()
-            loading.join()
+                for _t in rmv_indeces:
+                    cache_dict.pop(_t)
+                    try:
+                        tmp = interp_list["index"]
+                        tmp.remove(_t)
+                        interp_list["index"] = tmp
+                    except Exception:
+                        pass
+            __load_cache(self.source_path, self.image_list, self.target_path, frame_index * self.total_jump, self.total_cache, self.cache_dict, self.interp_list, self.lock)
             if frame_index < self.progress_points - 1:
                 now_cache_at = cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
                 if now_cache_at < self.total_cache - 1:
@@ -179,33 +172,32 @@ class VideoLabeler(object):
             if frame_index >= self.total_frames:
                 cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, self.last_progress_cache - 1)
                 return
-            with self.lock:
-                if "label" in self.cache_dict[frame_index].keys():
-                    label = self.cache_dict[frame_index]["label"]
-                    self.labeler.region_cache = deepcopy(label)
-                    self.labeler.prediction_status = False
+            if "label" in self.cache_dict[frame_index].keys():
+                label = self.cache_dict[frame_index]["label"]
+                self.labeler.region_cache = deepcopy(label)
+                self.labeler.prediction_status = False
+            else:
+                ready = np.array(self.interp_list["index"])
+                index_ = np.argwhere(frame_index >= ready)
+                self.labeler.prediction_status = True
+                if 0 < len(index_) < len(ready):
+                    begin_ = ready[index_[-1][0]]
+                    end_ = ready[index_[-1][0] + 1]
+                    interp_factor = (frame_index - begin_) / (end_ - begin_)
+                    interp_1 = self.cache_dict[begin_]["label"]
+                    interp_2 = self.cache_dict[end_]["label"]
+                    rst = {}
+                    for k in self.labeler.class_dict.keys():
+                        interp_1_bboxes = interp_1[k]
+                        interp_2_bboxes = interp_2[k]
+                        if len(interp_1_bboxes) > 0 and len(interp_2_bboxes) > 0:
+                            rst_bbox = __calc_bbox_dist(interp_1_bboxes, interp_2_bboxes, interp_factor)
+                            rst[k] = rst_bbox
+                        else:
+                            rst[k] = []
+                    self.labeler.region_cache = deepcopy(rst)
                 else:
-                    ready = np.array(self.interp_list["index"])
-                    index_ = np.argwhere(frame_index >= ready)
-                    self.labeler.prediction_status = True
-                    if 0 < len(index_) < len(ready):
-                        begin_ = ready[index_[-1][0]]
-                        end_ = ready[index_[-1][0] + 1]
-                        interp_factor = (frame_index - begin_) / (end_ - begin_)
-                        interp_1 = self.cache_dict[begin_]["label"]
-                        interp_2 = self.cache_dict[end_]["label"]
-                        rst = {}
-                        for k in self.labeler.class_dict.keys():
-                            interp_1_bboxes = interp_1[k]
-                            interp_2_bboxes = interp_2[k]
-                            if len(interp_1_bboxes) > 0 and len(interp_2_bboxes) > 0:
-                                rst_bbox = __calc_bbox_dist(interp_1_bboxes, interp_2_bboxes, interp_factor)
-                                rst[k] = rst_bbox
-                            else:
-                                rst[k] = []
-                        self.labeler.region_cache = deepcopy(rst)
-                    else:
-                        self.labeler.region_cache = {k: [] for k in self.labeler.class_dict.keys()}
+                    self.labeler.region_cache = {k: [] for k in self.labeler.class_dict.keys()}
 
         cv2.createTrackbar(self.cache_trackbar_name, self.labeler.window_name, 0, self.total_cache - 1, __TrackbarRender)
         cv2.createTrackbar(self.progress_trackbar_name, self.labeler.window_name, 0, self.progress_points - 1, __TrackbarLoading)
@@ -230,29 +222,26 @@ class VideoLabeler(object):
 
     def start_label(self, status_dict):
         self.labeler.render_image(self.empty.copy(), status_dict, "LOADING...")
-        with self.lock:
-            cache_dict_copy = list(self.cache_dict.keys())
+        cache_dict_copy = list(self.cache_dict.keys())
         while True:
             progress_pt = cv2.getTrackbarPos(self.progress_trackbar_name, self.labeler.window_name)
             cache_pt = cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
             frame_index = progress_pt * self.total_jump + cache_pt
             if frame_index in cache_dict_copy:
-                with self.lock:
-                    image = self.cache_dict[frame_index]["image"]
+                image = self.cache_dict[frame_index]["image"]
                 flag, rst = self.labeler.render_image(image.copy(), status_dict, self.task_name)
                 if flag:
-                    with self.lock:
-                        tmp = self.cache_dict[frame_index]
-                        tmp["label"] = rst
-                        self.cache_dict[frame_index] = tmp
-                        if frame_index not in self.interp_list["index"]:
-                            order_list = np.array(self.interp_list["index"])
-                            indeces_ = np.argwhere(frame_index <= order_list)
-                            if len(indeces_) > 0:
-                                last_index_ = indeces_[0][0]
-                                self.interp_list["index"] = order_list[:last_index_].tolist() + [frame_index] + order_list[last_index_:].tolist()
-                            else:
-                                self.interp_list["index"] = order_list.tolist() + [frame_index]
+                    tmp = self.cache_dict[frame_index]
+                    tmp["label"] = rst
+                    self.cache_dict[frame_index] = tmp
+                    if frame_index not in self.interp_list["index"]:
+                        order_list = np.array(self.interp_list["index"])
+                        indeces_ = np.argwhere(frame_index <= order_list)
+                        if len(indeces_) > 0:
+                            last_index_ = indeces_[0][0]
+                            self.interp_list["index"] = order_list[:last_index_].tolist() + [frame_index] + order_list[last_index_:].tolist()
+                        else:
+                            self.interp_list["index"] = order_list.tolist() + [frame_index]
                     json_rst = self.record_label(rst, os.path.join(self.source_path, self.image_list[frame_index]))
                     fname_id, ext = os.path.splitext(self.image_list[frame_index])
                     with open(os.path.join(self.target_path, fname_id + ".json"), "w") as f:
@@ -301,10 +290,9 @@ if __name__ == '__main__':
             print("not getting task, waiting 10 sec: {}".format(data))
             time.sleep(10)
 
-    MGR = Manager()
-    CACHE_DICT = MGR.dict()
-    INTERP_LIST = MGR.dict()
-    LOCK = MGR.Lock()
+    CACHE_DICT = {}
+    INTERP_LIST = {}
+    LOCK = None
 
     labeler = ClassifiedDetectionLabeler(window_name, window_size, False, region_type="rect", class_dict=class_dict, render_dict=render_dict, status_dict=status_dict)
     vl = VideoLabeler(labeler, CACHE_DICT, INTERP_LIST, LOCK, PREFIX)
