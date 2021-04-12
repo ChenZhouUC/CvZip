@@ -287,7 +287,7 @@ class ClassifiedDetectionLabeler(ElementaryLabeler):
                 radius = render_layers["background"][1]
             for _j, _rg in enumerate(_rgs):
                 img = polygon_marker(img, _rg, self.render_dict[_c], thicky, transparency, True, radius, True)
-        text = "{}:{} pt:{} rg:{}".format(task_name, self.class_dict[self.class_selected], len(self.point_cache), len(self.region_cache[self.class_selected]))
+        text = "{}:{}\npt:{} rg:{}".format(task_name, self.class_dict[self.class_selected], len(self.point_cache), len(self.region_cache[self.class_selected]))
         text_marker(img, text, (0, 0), (0, 0), FONT, FONTSCALE, THICKNESS, self.render_dict[self.class_selected], background=(255, 255, 255), bgthick=0.3)
         img = self.__patch_legend(img)
         cv2.imshow(self.window_name, img)

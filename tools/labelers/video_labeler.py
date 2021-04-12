@@ -22,7 +22,7 @@ FINISH_FLAG_FILE = "FINISHED.json"
 
 
 class VideoLabeler(object):
-    def __init__(self, image_labeler, cache_dict, lock, img_ext=".png", cache_length=100, load_task_length=500, step_jump=50, progress_trackbar_prefix='Progress Cuts x', cache_trackbar_name='Frame Cache +'):
+    def __init__(self, image_labeler, cache_dict, lock, prefix, img_ext=".png", cache_length=100, load_task_length=500, step_jump=50, progress_trackbar_prefix='Progress Cuts x', cache_trackbar_name='Frame Cache +'):
         self.labeler = image_labeler
         self.img_ext = img_ext
         self.cache_length = cache_length
@@ -33,6 +33,7 @@ class VideoLabeler(object):
         self.cache_dict = cache_dict
         self.lock = lock
         self.empty = (np.ones_like(self.labeler.legend) * 255).astype(np.uint8)
+        self.prefix = prefix
 
     def assign_task(self, source_path, target_path, restart):
         image_list_tmp = os.listdir(source_path)
@@ -150,7 +151,7 @@ class VideoLabeler(object):
         cv2.setTrackbarPos(self.progress_trackbar_name, self.labeler.window_name, 0)
 
     def record_label(self, label_dict, image_abs_path):
-        img_dict = {"image_name": image_abs_path,
+        img_dict = {"image_name": image_abs_path[len(self.prefix):].strip("/"),
                     "annotations": []}
         for k, v in label_dict.items():
             category_name = self.labeler.class_dict[k]
@@ -231,6 +232,6 @@ if __name__ == '__main__':
     LOCK = MGR.Lock()
 
     labeler = ClassifiedDetectionLabeler(window_name, window_size, False, region_type="rect", class_dict=class_dict, render_dict=render_dict, status_dict=status_dict)
-    vl = VideoLabeler(labeler, CACHE_DICT, LOCK)
+    vl = VideoLabeler(labeler, CACHE_DICT, LOCK, PREFIX)
     vl.assign_task(IMAGE_ROOT, LABEL_ROOT, RESTART_CACHE)
     vl.start_label(status_dict)
