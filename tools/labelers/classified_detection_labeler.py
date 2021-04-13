@@ -276,6 +276,16 @@ class ClassifiedDetectionLabeler(ElementaryLabeler):
         elif status.lower() == "quit":
             exit()
 
+    def __class_handler(self, cls):
+        if cls != self.class_selected:
+            if self.match is None or type(self.region_shift) == list:
+                if self.match is not None:
+                    this_region = self.region_cache[self.class_selected][self.match]
+                    self.region_cache[self.class_selected].pop(self.match)
+                    self.region_cache[cls].append(this_region)
+                    self.match = len(self.region_cache[cls]) - 1
+                self.class_selected = cls
+
     def render_image(self, img, status_dict, task_name, wait=5, pt_color=(0, 255, 0), render_layers={"selected": [0.5, 2], "background": [0.3, 1]}):
         if img.shape[2] == 3:
             cv2.setMouseCallback(self.window_name, self.__mouse_handler, cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
@@ -301,17 +311,16 @@ class ClassifiedDetectionLabeler(ElementaryLabeler):
         img = self.__patch_legend(img)
         cv2.imshow(self.window_name, img)
         pressed_key = cv2.waitKey(wait) & 0xFF
-        if self.match is None:
-            for k, v in self.class_dict.items():
-                if pressed_key == ord(str(k)):
-                    self.class_selected = k
-                    return False, None
         for k, v in status_dict.items():
             if pressed_key == ord(k):
                 flag, rst = self.__status_handler(v)
                 if flag:
                     print("recorded: {}".format(rst))
                     return flag, rst
+        for k, v in self.class_dict.items():
+            if pressed_key == ord(str(k)):
+                self.__class_handler(k)
+                return False, None
         return False, None
 
     def clear(self):
