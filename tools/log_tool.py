@@ -21,7 +21,7 @@ def LoggerSetup(logFile='./logs/loggingMsg.log', fileLevel='INFO', streamLevel='
 
     logger = logging.getLogger()
     logger.setLevel('DEBUG')  # the lowest level
-    BASIC_FORMAT = ("•".join(["%(asctime)s %(levelname)s", "%(filename)s(%(lineno)d)%(funcName)s:〔%(message)s〕"]))
+    BASIC_FORMAT = (" ".join(["%(asctime)s %(levelname)s", "%(filename)s[%(lineno)d] %(funcName)s: %(message)s"]))
     SIMPLE_FORMAT = (" ".join(["%(asctime)s %(levelname)s", "%(message)s"]))
     DATE_FORMAT = "%Y/%b/%d %H:%M:%S"
 

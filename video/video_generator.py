@@ -1,6 +1,12 @@
 import cv2
 import os
 import numpy as np
+import sys
+module_ = os.path.abspath(__file__)
+for layer_ in range(2):
+    module_ = os.path.dirname(module_)
+sys.path.append(module_)
+from tools.progress_bar import progressbar_urlretrieve
 
 
 def decode_fourcc(cc):
@@ -63,7 +69,7 @@ class VideoGenerator:
         __frame_counter = 0
         __weights_summary = 0.0
         __this_frame_index = 0
-        while(self._reader.isOpened() and __frame_counter < output_frames):
+        while (self._reader.isOpened() and __frame_counter < output_frames):
             ret, frame = self._reader.read()
             __this_frame_index += 1
             if ret:
@@ -99,7 +105,7 @@ class VideoGenerator:
     def input_identity(self):
         return self._input_identity
 
-    def split_frames(self, target_dir, ext=".png", start=None, num=None):
+    def split_frames(self, target_dir, ext=".png", start=None, num=None, fps=None, exists_callback=None, max_aspect=None):
         if start is None:
             start = 0
         else:
@@ -108,27 +114,56 @@ class VideoGenerator:
             end = self._input_frames
         else:
             end = np.clip(start + num, start, self._input_frames).astype(int)
-        frame_dir = os.path.join(target_dir, self._input_identity, "images")
+        if fps is None:
+            fps = 1.0
+        else:
+            fps = np.clip(fps, 0.0, self._input_fps).astype(int)
+
+        frame_dir = os.path.join(target_dir)
         if os.path.exists(frame_dir):
             print("warning: this identity already used, please check if it is labeled!")
+            if exists_callback is not None:
+                if exists_callback(frame_dir):
+                    file_list = os.listdir(frame_dir)
+                    counter = 0
+                    for _f in file_list:
+                        if os.path.splitext(_f)[1] == ext:
+                            counter += 1
+                    print("warning: this identity packed with {} images, unpacking skipped!".format(counter))
+                    return counter
         else:
             os.makedirs(frame_dir, exist_ok=True)
         carving_stats = 0
+        acc_rate = 0.0
+        fps_rate = fps / self._input_fps
+        reporthook = progressbar_urlretrieve(prefix='Progress:', suffix='Unpacking', urlstr='Unpacked: ' + self._input, length=100, dynamic=True)
         while True:
             ret, frame = self.read_frame()
             this_frame_index = self._reader_counter - 1
             if ret:
                 if start <= this_frame_index < end:
-                    img_path = os.path.join(frame_dir, str(this_frame_index) + ext)
-                    cv2.imwrite(img_path, frame)
-                    carving_stats += 1
-                    print("carving {}: {}".format(carving_stats, img_path))
+                    if int(acc_rate + fps_rate) > int(acc_rate):
+                        height_, width_ = frame.shape[:2]
+                        if max(height_, width_) > max_aspect:
+                            if height_ >= width_:
+                                new_height_ = max_aspect
+                                new_width_ = round(width_ / height_ * new_height_)
+                            else:
+                                new_width_ = max_aspect
+                                new_height_ = round(height_ / width_ * new_width_)
+                            frame = cv2.resize(frame, (new_width_, new_height_))
+                        img_path = os.path.join(frame_dir, str(this_frame_index) + ext)
+                        cv2.imwrite(img_path, frame)
+                        carving_stats += 1
+                        reporthook(this_frame_index, 1, self._input_frames)
+                    acc_rate += fps_rate
                 elif this_frame_index >= end:
                     break
             else:
                 print("error: reading video error, stopped at frame {}!".format(this_frame_index))
                 break
         print("finish splitting: {} frames".format(carving_stats))
+        return carving_stats
 
     def designate_format(self, output_format):
         self.output_format = output_format.lower()
