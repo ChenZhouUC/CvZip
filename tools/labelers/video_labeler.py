@@ -230,13 +230,11 @@ class VideoLabeler(object):
 
     def start_label(self, status_dict):
         self.labeler.render_image(self.empty.copy(), status_dict, "LOADING...")
-        with self.lock:
-            cache_dict_copy = list(self.cache_dict.keys())
         while True:
             progress_pt = cv2.getTrackbarPos(self.progress_trackbar_name, self.labeler.window_name)
             cache_pt = cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
             frame_index = progress_pt * self.total_jump + cache_pt
-            if frame_index in cache_dict_copy:
+            if frame_index in self.cache_dict.keys():
                 with self.lock:
                     image = self.cache_dict[frame_index]["image"]
                 flag, rst = self.labeler.render_image(image.copy(), status_dict, self.task_name)
