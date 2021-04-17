@@ -129,14 +129,16 @@ class VideoLabeler(object):
                     except Exception:
                         pass
             __load_cache(self.source_path, self.image_list, self.target_path, frame_index * self.total_jump, self.total_cache, self.cache_dict, self.interp_list, self.lock)
+            now_cache_at = cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
             if frame_index < self.progress_points - 1:
-                now_cache_at = cv2.getTrackbarPos(self.cache_trackbar_name, self.labeler.window_name)
                 if now_cache_at < self.total_cache - 1:
                     cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, now_cache_at + 1)
                 else:
                     cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, now_cache_at - 1)
                 cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, now_cache_at)
             else:
+                if now_cache_at == 0:
+                    cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, 1)
                 cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, 0)
 
         def __TrackbarDeactivate(num):
