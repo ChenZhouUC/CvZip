@@ -259,6 +259,7 @@ class VideoLabeler(object):
                         cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, cache_pt + 1)
                     elif progress_pt < self.progress_points - 1:
                         cv2.setTrackbarPos(self.progress_trackbar_name, self.labeler.window_name, progress_pt + 1)
+                        cv2.setTrackbarPos(self.cache_trackbar_name, self.labeler.window_name, self.total_cache - self.total_jump)
             else:
                 self.labeler.render_image(self.empty.copy(), status_dict, "LOADING......")
                 time.sleep(1)
