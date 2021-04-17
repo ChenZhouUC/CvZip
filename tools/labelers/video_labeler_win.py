@@ -275,6 +275,12 @@ if __name__ == '__main__':
     RESTART_CACHE = args.cache
     PREFIX = args.prefix
 
+    def convert_str_key_int(dic):
+        new_dic = {}
+        for k, v in dic.items():
+            new_dic[int(k)] = v
+        return new_dic
+
     assignment_url = HOST_PORT + "/assignment?user=" + getpass.getuser() + "&restart=" + str(RESTART_TASK)
     while(True):
         response = urllib.request.urlopen(assignment_url)
@@ -283,9 +289,10 @@ if __name__ == '__main__':
             IMAGE_ROOT = os.path.join(PREFIX, data["image_root"][len(data["prefix"]):].strip('/'), data["tasks"][0].strip('/'))
             LABEL_ROOT = os.path.join(PREFIX, data["label_root"][len(data["prefix"]):].strip('/'), data["tasks"][0].strip('/'))
             print(IMAGE_ROOT, LABEL_ROOT)
-            render_dict = data["render_dict"]
-            class_dict = data["class_dict"]
+            render_dict = convert_str_key_int(data["render_dict"])
+            class_dict = convert_str_key_int(data["class_dict"])
             status_dict = data["status_dict"]
+            img_ext = data["img_ext"]
             break
         else:
             print("not getting task, waiting 10 sec: {}".format(data))
@@ -296,6 +303,6 @@ if __name__ == '__main__':
     LOCK = None
 
     labeler = ClassifiedDetectionLabeler(window_name, window_size, False, region_type="rect", class_dict=class_dict, render_dict=render_dict, status_dict=status_dict)
-    vl = VideoLabeler(labeler, CACHE_DICT, INTERP_LIST, LOCK, PREFIX)
+    vl = VideoLabeler(labeler, CACHE_DICT, INTERP_LIST, LOCK, PREFIX, img_ext=img_ext)
     vl.assign_task(IMAGE_ROOT, LABEL_ROOT, RESTART_CACHE)
     vl.start_label(status_dict)

@@ -10,7 +10,7 @@ sys.path.append(module_)
 from image.geometrics_marker import text_marker, polygon_marker, rectangle_marker
 from elementary_labeler import ElementaryLabeler
 
-FONT, FONTSCALE, THICKNESS = cv2.FONT_HERSHEY_COMPLEX, 1.5, 2
+FONT, FONTSCALE, THICKNESS = cv2.FONT_HERSHEY_COMPLEX, 1.0, 2
 
 
 class ClassifiedDetectionLabeler(ElementaryLabeler):
