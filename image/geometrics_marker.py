@@ -22,6 +22,8 @@ def polygon_marker(img, polygon, color, thickness, fill, point, radius, closed, 
         img[locs[0], locs[1]] = fused[locs[0], locs[1]]
     if thickness < 0:
         marked = cv2.drawContours(img, [polygon], 0, color, thickness)
+    elif thickness == 0:
+        marked = img
     else:
         marked = cv2.polylines(img, [polygon], closed, color, thickness)
     if point > 0:
@@ -59,7 +61,7 @@ def text_marker(img, text, coordinate, locator, font, fontscale, thickness, colo
         right_down_corner = [coordinate[0] - locator_x + label_width_max, coordinate[1] - locator_y + (label_height + baseline) * len(text_list)]
         img = rectangle_marker(img, [left_top_corner, right_down_corner], background, thickness, bgthick, False, None)
     for _i, text in enumerate(text_list):
-        shift_ = np.array([- locator_x, (label_height + baseline) * _i + label_height - locator_y])
+        shift_ = np.array([-locator_x, (label_height + baseline) * _i + label_height - locator_y])
         coordinate_ = tuple((np.array(coordinate) + shift_).round().astype(int))
         cv2.putText(img, text, coordinate_, font, fontscale, color, thickness)
     return img
